@@ -8,31 +8,84 @@ from unittest.mock import patch, MagicMock
 from buspirate_mcp.hardware import BusPirateHardware
 
 
+def _fake_port(device, vid=0x1209, pid=0x7331, description="", product=None,
+               location=None, hwid=""):
+    """Build a pyserial-like ListPortInfo stand-in for list_devices tests."""
+    p = MagicMock()
+    p.device = device
+    p.vid = vid
+    p.pid = pid
+    p.description = description
+    p.product = product
+    p.location = location
+    p.hwid = hwid
+    return p
+
+
 class TestListDevices:
-    def test_finds_acm_devices(self, tmp_path):
-        with patch("buspirate_mcp.hardware.glob") as mock_glob:
-            mock_glob.return_value = ["/dev/ttyACM0", "/dev/ttyACM1"]
+    def test_finds_bp_devices(self):
+        ports = [
+            _fake_port("/dev/ttyACM0", location="1-8:1.0"),
+            _fake_port("/dev/ttyACM1", location="1-8:1.2"),
+        ]
+        with patch("buspirate_mcp.hardware.list_ports.comports", return_value=ports):
             devices = BusPirateHardware.list_devices()
             assert len(devices) == 2
             assert devices[0]["path"] == "/dev/ttyACM0"
             assert devices[1]["path"] == "/dev/ttyACM1"
 
-    def test_identifies_terminal_and_binary_ports(self):
-        with patch("buspirate_mcp.hardware.glob") as mock_glob:
-            mock_glob.return_value = ["/dev/ttyACM0", "/dev/ttyACM1"]
+    def test_identifies_terminal_and_binary_by_interface(self):
+        # Returned out of order; lower USB interface must be terminal.
+        ports = [
+            _fake_port("/dev/ttyACM1", location="1-8:1.2"),
+            _fake_port("/dev/ttyACM0", location="1-8:1.0"),
+        ]
+        with patch("buspirate_mcp.hardware.list_ports.comports", return_value=ports):
             devices = BusPirateHardware.list_devices()
-            assert devices[0]["role"] == "terminal"
-            assert devices[1]["role"] == "binary"
+            assert devices[0] == {"path": "/dev/ttyACM0", "role": "terminal"}
+            assert devices[1] == {"path": "/dev/ttyACM1", "role": "binary"}
+
+    def test_windows_orders_by_location_suffix(self):
+        # Real BP6-on-Windows shape: only the binary port reports a location.
+        ports = [
+            _fake_port("COM9", location="1-8:x.2"),
+            _fake_port("COM14", location=None),
+        ]
+        with patch("buspirate_mcp.hardware.list_ports.comports", return_value=ports):
+            devices = BusPirateHardware.list_devices()
+            assert devices[0] == {"path": "COM14", "role": "terminal"}
+            assert devices[1] == {"path": "COM9", "role": "binary"}
+
+    def test_falls_back_to_device_name_when_no_location(self):
+        ports = [
+            _fake_port("COM5", location=None),
+            _fake_port("COM4", location=None),
+        ]
+        with patch("buspirate_mcp.hardware.list_ports.comports", return_value=ports):
+            devices = BusPirateHardware.list_devices()
+            assert devices[0] == {"path": "COM4", "role": "terminal"}
+            assert devices[1] == {"path": "COM5", "role": "binary"}
+
+    def test_ignores_non_bp_devices(self):
+        ports = [
+            _fake_port("/dev/ttyACM0", vid=0x2341, pid=0x0043,
+                       description="Arduino Uno"),
+            _fake_port("/dev/ttyACM1", location="1-8:1.0"),
+        ]
+        with patch("buspirate_mcp.hardware.list_ports.comports", return_value=ports):
+            devices = BusPirateHardware.list_devices()
+            assert len(devices) == 1
+            assert devices[0]["path"] == "/dev/ttyACM1"
+            assert devices[0]["role"] == "unknown"
 
     def test_single_device_marked_unknown(self):
-        with patch("buspirate_mcp.hardware.glob") as mock_glob:
-            mock_glob.return_value = ["/dev/ttyACM0"]
+        ports = [_fake_port("/dev/ttyACM0", location="1-8:1.0")]
+        with patch("buspirate_mcp.hardware.list_ports.comports", return_value=ports):
             devices = BusPirateHardware.list_devices()
             assert devices[0]["role"] == "unknown"
 
     def test_returns_empty_when_no_devices(self):
-        with patch("buspirate_mcp.hardware.glob") as mock_glob:
-            mock_glob.return_value = []
+        with patch("buspirate_mcp.hardware.list_ports.comports", return_value=[]):
             devices = BusPirateHardware.list_devices()
             assert devices == []
 

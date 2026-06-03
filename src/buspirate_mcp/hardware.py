@@ -8,10 +8,12 @@ testing without hardware trivial -- mock this, not the SDK.
 from __future__ import annotations
 
 import io
+import re
 import sys
-from glob import glob
 from pathlib import Path
 from typing import Any
+
+from serial.tools import list_ports
 
 # Add vendored BPIO2 SDK to sys.path so we can import it.
 # The SDK lives at vendor/bpio2/python/pybpio/ relative to the package root.
@@ -81,22 +83,48 @@ class BusPirateHardware:
         """Clear the active mode so a different protocol can be configured."""
         self._active_mode = None
 
+    # BP6 USB identifiers (pid.codes 1209:7331).
+    _BP_VID = 0x1209
+    _BP_PID = 0x7331
+
+    @staticmethod
+    def _usb_interface(port: Any) -> int:
+        """Best-effort USB interface number, used to order the BP6's two ports.
+
+        The terminal is the lower-numbered interface, the binary BPIO2 protocol
+        the higher one (the BPIO2 port enumerates as interface 2). pyserial
+        reports it as the suffix of .location (e.g. "1-8:x.2" -> 2). Defaults to
+        0 when absent, in which case callers fall back to device-name ordering.
+        """
+        m = re.search(r"[.:](\d+)$", port.location or "")
+        return int(m.group(1)) if m else 0
+
     @staticmethod
     def list_devices() -> list[dict[str, str]]:
         """Find BusPirate devices on USB CDC serial ports.
 
-        BP6 exposes two USB CDC ports: first is the text terminal,
-        second is the binary protocol (BPIO2). We identify by order.
+        The BP6 enumerates as a composite USB device with two CDC ports: the
+        text terminal (lower USB interface) and the binary BPIO2 protocol
+        (higher interface). We enumerate all serial ports via pyserial, keep the
+        ones whose USB VID:PID match the BusPirate, and order them by interface
+        number so the terminal comes first. This is cross-platform (Linux,
+        Windows, macOS) and ignores unrelated CDC devices.
         """
-        paths = sorted(glob("/dev/ttyACM*"))
-        devices = []
-        for i, p in enumerate(paths):
-            if len(paths) >= 2:
-                role = "terminal" if i % 2 == 0 else "binary"
-            else:
-                role = "unknown"
-            devices.append({"path": p, "role": role})
-        return devices
+        matched: list[tuple[int, str]] = []
+        for p in list_ports.comports():
+            if (p.vid, p.pid) != (BusPirateHardware._BP_VID, BusPirateHardware._BP_PID):
+                continue
+            matched.append((BusPirateHardware._usb_interface(p), p.device))
+
+        matched.sort()
+        n = len(matched)
+        return [
+            {
+                "path": dev,
+                "role": ("terminal" if i == 0 else "binary") if n >= 2 else "unknown",
+            }
+            for i, (_iface, dev) in enumerate(matched)
+        ]
 
     @classmethod
     def connect(cls, port: str) -> BusPirateHardware:

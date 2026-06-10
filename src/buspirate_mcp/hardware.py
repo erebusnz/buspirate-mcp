@@ -169,8 +169,35 @@ class BusPirateHardware:
         """Send data over UART to the target."""
         self.uart.transfer(data, read_bytes=0)
 
+    def _ensure_psu_ready(self) -> None:
+        """Make sure the BP will actually accept a PSU request.
+
+        The BPIO2 SDK gates every PSU set/enable behind ``config_check()``:
+        until a mode has been configured, ``set_psu_enable`` silently returns
+        ``None`` and the rail never turns on — the only symptom is ``applied:
+        null`` over MCP (the SDK's "Not connected" message goes to stdout).
+        When no bus mode is active, bring up a neutral UART configuration so a
+        standalone ``set_voltage()`` / ``set_power()`` works in a single call.
+        ``_active_mode`` is deliberately left ``None``: the PSU is mode-agnostic
+        and not claiming a mode keeps SPI/I2C free to open later without
+        ``reset_mode()``.
+        """
+        proto = self._active_protocol
+        if getattr(proto, "configured", False):
+            return
+        self.uart.configure(
+            speed=115200, data_bits=8, parity=False, stop_bits=1,
+            flow_control=False, signal_inversion=False, async_callback=None,
+        )
+
     def set_voltage(self, voltage_v: float, current_limit_ma: int) -> bool:
-        """Set the power supply voltage and current limit."""
+        """Set the PSU voltage + current limit and enable the rail (one step).
+
+        The BPIO2 ``set_psu_enable`` request carries the voltage, current limit
+        and the enable flag together, so this single call powers the output on
+        — a separate ``set_power(True)`` is not needed.
+        """
+        self._ensure_psu_ready()
         proto = self._active_protocol
         voltage_mv = round(voltage_v * 1000)
         self._last_voltage_mv = voltage_mv
@@ -182,15 +209,18 @@ class BusPirateHardware:
     def set_power(self, enable: bool) -> bool:
         """Enable or disable the power supply.
 
-        When enabling, re-applies the last configured voltage/current.
-        Raises RuntimeError if no voltage was previously configured.
+        When enabling, re-applies the last configured voltage/current. Raises
+        RuntimeError if no voltage was previously configured. ``set_voltage()``
+        already enables the rail, so this is only needed to toggle it off/on
+        without re-specifying the voltage.
         """
+        if enable and self._last_voltage_mv == 0:
+            raise RuntimeError(
+                "No voltage configured. Call set_voltage() before set_power(True)."
+            )
+        self._ensure_psu_ready()
         proto = self._active_protocol
         if enable:
-            if self._last_voltage_mv == 0:
-                raise RuntimeError(
-                    "No voltage configured. Call set_voltage() before set_power(True)."
-                )
             return proto.set_psu_enable(
                 voltage_mv=self._last_voltage_mv,
                 current_ma=self._last_current_ma,

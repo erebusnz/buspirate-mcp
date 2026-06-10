@@ -180,6 +180,45 @@ class TestPowerSupply:
                 voltage_mv=2300, current_ma=100,
             )
 
+    def test_set_voltage_autoconfigures_when_not_ready(self):
+        # Regression: the BP silently no-ops PSU requests until a mode is
+        # configured. set_voltage must lazily bring one up so it works in one
+        # call, without claiming an active bus mode.
+        with patch("buspirate_mcp.hardware.BPIOClient"), \
+             patch("buspirate_mcp.hardware.BPIOUART") as mock_uart_cls:
+            mock_uart = MagicMock()
+            mock_uart.configured = False
+            mock_uart.set_psu_enable.return_value = True
+
+            def _configure(**kwargs):
+                mock_uart.configured = True
+            mock_uart.configure.side_effect = _configure
+            mock_uart_cls.return_value = mock_uart
+
+            hw = BusPirateHardware.connect("/dev/ttyACM1")
+            result = hw.set_voltage(2.5, 100)
+
+            mock_uart.configure.assert_called_once()
+            mock_uart.set_psu_enable.assert_called_once_with(
+                voltage_mv=2500, current_ma=100,
+            )
+            assert result is True
+            # PSU is mode-agnostic: must not claim a bus mode.
+            assert hw._active_mode is None
+
+    def test_set_voltage_skips_configure_when_ready(self):
+        with patch("buspirate_mcp.hardware.BPIOClient"), \
+             patch("buspirate_mcp.hardware.BPIOUART") as mock_uart_cls:
+            mock_uart = MagicMock()
+            mock_uart.configured = True
+            mock_uart.set_psu_enable.return_value = True
+            mock_uart_cls.return_value = mock_uart
+
+            hw = BusPirateHardware.connect("/dev/ttyACM1")
+            hw.set_voltage(2.5, 100)
+
+            mock_uart.configure.assert_not_called()
+
     def test_set_power_on_uses_last_voltage(self):
         with patch("buspirate_mcp.hardware.BPIOClient"), \
              patch("buspirate_mcp.hardware.BPIOUART") as mock_uart_cls:

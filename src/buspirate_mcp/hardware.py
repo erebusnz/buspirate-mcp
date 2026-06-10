@@ -169,18 +169,19 @@ class BusPirateHardware:
         """Send data over UART to the target."""
         self.uart.transfer(data, read_bytes=0)
 
-    def _ensure_psu_ready(self) -> None:
-        """Make sure the BP will actually accept a PSU request.
+    def _ensure_configured(self) -> None:
+        """Make sure the BP will accept a configuration / ADC request.
 
-        The BPIO2 SDK gates every PSU set/enable behind ``config_check()``:
-        until a mode has been configured, ``set_psu_enable`` silently returns
-        ``None`` and the rail never turns on — the only symptom is ``applied:
-        null`` over MCP (the SDK's "Not connected" message goes to stdout).
-        When no bus mode is active, bring up a neutral UART configuration so a
-        standalone ``set_voltage()`` / ``set_power()`` works in a single call.
-        ``_active_mode`` is deliberately left ``None``: the PSU is mode-agnostic
-        and not claiming a mode keeps SPI/I2C free to open later without
-        ``reset_mode()``.
+        The BPIO2 SDK gates PSU set/enable *and* ADC reads behind
+        ``config_check()``: until a mode has been configured, ``set_psu_enable``
+        and ``get_adc_mv`` silently return ``None`` and nothing happens — over
+        MCP the only symptom is ``applied: null`` / an empty read (the SDK's
+        "Not connected" message goes to stdout). When no bus mode is active,
+        bring up a neutral UART configuration so standalone ``set_voltage()`` /
+        ``set_power()`` / ``get_pin_voltages()`` work in a single call.
+        ``_active_mode`` is deliberately left ``None``: the PSU and ADC are
+        mode-agnostic, and not claiming a mode keeps SPI/I2C free to open later
+        without ``reset_mode()``.
         """
         proto = self._active_protocol
         if getattr(proto, "configured", False):
@@ -197,7 +198,7 @@ class BusPirateHardware:
         and the enable flag together, so this single call powers the output on
         — a separate ``set_power(True)`` is not needed.
         """
-        self._ensure_psu_ready()
+        self._ensure_configured()
         proto = self._active_protocol
         voltage_mv = round(voltage_v * 1000)
         self._last_voltage_mv = voltage_mv
@@ -218,7 +219,7 @@ class BusPirateHardware:
             raise RuntimeError(
                 "No voltage configured. Call set_voltage() before set_power(True)."
             )
-        self._ensure_psu_ready()
+        self._ensure_configured()
         proto = self._active_protocol
         if enable:
             return proto.set_psu_enable(
@@ -241,7 +242,12 @@ class BusPirateHardware:
         proto.set_io_direction(direction_mask=mask, direction=0)
 
     def get_pin_voltages(self) -> list[int]:
-        """Read ADC millivolt values for all IO pins."""
+        """Read ADC millivolt values for all IO pins.
+
+        Ensures a mode is configured first so the read doesn't silently return
+        nothing on a freshly connected device (same gate as the PSU calls).
+        """
+        self._ensure_configured()
         return self._active_protocol.get_adc_mv()
 
     def set_pin_output(self, pin: int, high: bool) -> None:

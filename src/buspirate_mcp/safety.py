@@ -27,6 +27,7 @@ _TOOL_TIERS: dict[str, SafetyTier] = {
     "close_uart": SafetyTier.ALLOWED_WRITE,
     "set_voltage": SafetyTier.APPROVAL_WRITE,
     "set_power": SafetyTier.APPROVAL_WRITE,
+    "measure_voltage": SafetyTier.READ_ONLY,
     "enter_download_mode": SafetyTier.ALLOWED_WRITE,
     "read_flash": SafetyTier.ALLOWED_WRITE,
     # SPI

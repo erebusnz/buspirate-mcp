@@ -1,6 +1,6 @@
 # buspirate-mcp
 
-MCP server for BusPirate 6 hardware security testing. Exposes UART, SPI, I2C, 1-Wire, power supply, GPIO, and logic analyzer operations as [Model Context Protocol](https://modelcontextprotocol.io/) tools over stdio transport. 33 tools across 4 bus protocols + logic analyzer.
+MCP server for BusPirate 6 hardware security testing. Exposes UART, SPI, I2C, 1-Wire, power supply, GPIO, and logic analyzer operations as [Model Context Protocol](https://modelcontextprotocol.io/) tools over stdio transport. 34 tools across 4 bus protocols + logic analyzer.
 
 Built for use with Claude Code but works with any MCP client.
 
@@ -67,8 +67,9 @@ Set `PIDEV_ENGAGEMENTS_DIR` environment variable to control where engagement log
 | `close_uart` | allowed-write | Close session, finalize logs |
 | `enter_download_mode` | allowed-write | GPIO toggle for bootloader entry |
 | `read_flash` | allowed-write | Dump flash via esptool through UART bridge |
-| `set_voltage` | approval-write | Set PSU voltage (requires confirmation) |
+| `set_voltage` | approval-write | Set PSU voltage + current limit and enable, one call (requires confirmation) |
 | `set_power` | approval-write | Enable/disable PSU (requires confirmation) |
+| `measure_voltage` | read-only | Read DC voltage (mV) on an IO pin via ADC; e.g. read back VOUT |
 | **SPI** | | |
 | `open_spi` | allowed-write | Configure SPI mode, create session |
 | `spi_probe` | read-only | Read JEDEC ID + status register, decode chip |

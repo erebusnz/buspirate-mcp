@@ -189,6 +189,29 @@ TOOL_DEFINITIONS = [
         annotations={"destructiveHint": True, "readOnlyHint": False},
     ),
     Tool(
+        name="measure_voltage",
+        description=(
+            "Read the DC voltage (mV and V) on a BP IO pin via its ADC. "
+            "Use this to read back an analog level — e.g. confirm the PSU "
+            "output by jumpering VOUT to an IO pin, or check any DC node. "
+            "Returns the pin's voltage plus the full 8-pin snapshot. "
+            "(Note: this, not verify_connection, is the voltmeter — "
+            "verify_connection only samples one pin for digital activity.) "
+            "[read-only]"
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "pin": {
+                    "type": "integer", "minimum": 0, "maximum": 7,
+                    "description": "BP IO pin number to measure (0-7)",
+                },
+            },
+            "required": ["pin"],
+        },
+        annotations={"readOnlyHint": True},
+    ),
+    Tool(
         name="enter_download_mode",
         description=(
             "Put target into UART download mode by toggling GPIO pins. "
@@ -752,6 +775,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = await tools.tool_set_power(
                 hardware=hw,
                 enable=arguments["enable"],
+            )
+
+        elif name == "measure_voltage":
+            hw = _get_hardware()
+            result = await tools.tool_measure_voltage(
+                hardware=hw,
+                pin=arguments["pin"],
             )
 
         elif name == "enter_download_mode":

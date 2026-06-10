@@ -24,6 +24,7 @@ TOOL_ARGS = {
     "close_uart": {"session_id": "t"},
     "set_voltage": {"voltage_v": 3.3, "current_limit_ma": 100, "_confirmed": True},
     "set_power": {"enable": True, "_confirmed": True},
+    "measure_voltage": {"pin": 0},
     "enter_download_mode": {"boot_pin": 0, "reset_pin": 1},
     "read_flash": {"size": 0x1000, "output_path": "/tmp/test.bin"},
     "open_spi": {"engagement_name": "test"},

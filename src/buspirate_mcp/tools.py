@@ -319,6 +319,33 @@ async def tool_set_power(
     }
 
 
+async def tool_measure_voltage(
+    hardware: Any,
+    pin: int,
+) -> dict[str, Any]:
+    """Read the DC voltage on a BP IO pin via its ADC.
+
+    This is the way to read back an analog level — e.g. confirm the PSU
+    output by jumpering VOUT to an IO pin, or check any DC node. Returns the
+    requested pin's millivolts plus the full 8-pin snapshot.
+    """
+    if not isinstance(pin, int) or pin < 0 or pin > 7:
+        return {"pin": pin, "millivolts": None, "volts": None,
+                "error": f"pin must be 0-7, got {pin}"}
+    voltages = hardware.get_pin_voltages()
+    if not voltages:
+        return {"pin": pin, "millivolts": None, "volts": None,
+                "error": "ADC read returned no data (device not responding)."}
+    mv = voltages[pin]
+    return {
+        "pin": pin,
+        "millivolts": mv,
+        "volts": round(mv / 1000.0, 3),
+        "all_pins_mv": list(voltages),
+        "error": None,
+    }
+
+
 async def tool_enter_download_mode(
     hardware: Any,
     boot_pin: int,

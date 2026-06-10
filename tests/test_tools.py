@@ -13,6 +13,7 @@ from buspirate_mcp.tools import (
     tool_close_uart,
     tool_set_voltage,
     tool_set_power,
+    tool_measure_voltage,
     tool_enter_download_mode,
     tool_read_flash,
     tool_open_1wire,
@@ -120,6 +121,35 @@ class TestVerifyConnection:
             hardware=mock_hw, pins={"tx": 4, "rx": 5}, sample_duration_ms=100,
         )
         mock_hw.configure_uart.assert_called_once_with(speed=115200)
+
+
+class TestMeasureVoltage:
+    @pytest.mark.asyncio
+    async def test_reads_requested_pin(self):
+        mock_hw = MagicMock()
+        mock_hw.get_pin_voltages.return_value = [33, 0, 0, 0, 2500, 0, 0, 0]
+        result = await tool_measure_voltage(hardware=mock_hw, pin=4)
+        assert result["pin"] == 4
+        assert result["millivolts"] == 2500
+        assert result["volts"] == 2.5
+        assert result["all_pins_mv"] == [33, 0, 0, 0, 2500, 0, 0, 0]
+        assert result["error"] is None
+
+    @pytest.mark.asyncio
+    async def test_rejects_out_of_range_pin(self):
+        mock_hw = MagicMock()
+        result = await tool_measure_voltage(hardware=mock_hw, pin=9)
+        assert result["millivolts"] is None
+        assert "0-7" in result["error"]
+        mock_hw.get_pin_voltages.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_handles_no_adc_data(self):
+        mock_hw = MagicMock()
+        mock_hw.get_pin_voltages.return_value = None
+        result = await tool_measure_voltage(hardware=mock_hw, pin=0)
+        assert result["millivolts"] is None
+        assert result["error"]
 
 
 class TestScanBaud:
